@@ -46,6 +46,8 @@ pub enum Payload {
         collection: Pubkey,
         args: MetadataArgs,
         verify: bool,
+        creator_hash: [u8; 32],
+        data_hash: [u8; 32],
     },
 }
 //TODO add more of the parsing here to minimize program transformer code
@@ -201,7 +203,8 @@ impl ProgramParser for BubblegumParser {
                             Some(build_creator_verification_payload(keys, ix_data, false)?);
                     }
                     InstructionName::VerifyCollection | InstructionName::SetAndVerifyCollection => {
-                        b_inst.payload = Some(build_collection_verification_payload(ix_data)?);
+                        b_inst.payload =
+                            Some(build_collection_verification_payload(keys, ix_data)?);
                     }
                     InstructionName::UnverifyCollection => {
                         b_inst.payload =
@@ -255,7 +258,10 @@ fn build_creator_verification_payload(
 // See Bubblegum for offsets and positions:
 // https://github.com/metaplex-foundation/mpl-bubblegum/blob/main/programs/bubblegum/README.md#-verify_collection-unverify_collection-and-set_and_verify_collection
 // Note: Collection from the args is used to update the collection in Bubblegum, so use it as the source of truth (instead of collection via accounts).
-fn build_collection_verification_payload(ix_data: &[u8]) -> Result<Payload, BlockbusterError> {
+fn build_collection_verification_payload(
+    keys: &[plerkle_serialization::Pubkey],
+    ix_data: &[u8],
+) -> Result<Payload, BlockbusterError> {
     let metadata_offset = 108;
     let collection_byte_size = 32;
     let metadata_byte_end = ix_data.len() - collection_byte_size;
@@ -269,11 +275,21 @@ fn build_collection_verification_payload(ix_data: &[u8]) -> Result<Payload, Bloc
     let args = MetadataArgs::try_from_slice(&args_raw)?;
     let collection_raw = ix_data[metadata_byte_end..].to_vec();
     let collection: Pubkey = Pubkey::try_from_slice(&collection_raw)?;
+    let creator_hash = keys
+        .get(2)
+        .ok_or(BlockbusterError::InstructionParsingError)?
+        .0;
+    let data_hash = keys
+        .get(1)
+        .ok_or(BlockbusterError::InstructionParsingError)?
+        .0;
 
     Ok(Payload::CollectionVerification {
         collection,
         args,
         verify: true,
+        creator_hash,
+        data_hash,
     })
 }
 
@@ -292,6 +308,14 @@ fn build_collection_unverification_payload(
 
     let args_raw = ix_data[metadata_offset..].to_vec();
     let args = MetadataArgs::try_from_slice(&args_raw)?;
+    let creator_hash = keys
+        .get(2)
+        .ok_or(BlockbusterError::InstructionParsingError)?
+        .0;
+    let data_hash = keys
+        .get(1)
+        .ok_or(BlockbusterError::InstructionParsingError)?
+        .0;
     let collection_raw = keys
         .get(collection_index)
         .ok_or(BlockbusterError::InstructionParsingError)?
@@ -302,5 +326,7 @@ fn build_collection_unverification_payload(
         collection,
         args,
         verify: false,
+        creator_hash,
+        data_hash,
     })
 }
