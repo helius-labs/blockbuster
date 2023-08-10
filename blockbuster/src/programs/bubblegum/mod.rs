@@ -37,17 +37,11 @@ pub enum Payload {
     },
     CreatorVerification {
         creator: Pubkey,
-        verify: bool,
-        creator_hash: [u8; 32],
-        data_hash: [u8; 32],
-        args: MetadataArgs,
+        verify: bool
     },
     CollectionVerification {
         collection: Pubkey,
-        args: MetadataArgs,
-        verify: bool,
-        creator_hash: [u8; 32],
-        data_hash: [u8; 32],
+        verify: bool
     },
 }
 //TODO add more of the parsing here to minimize program transformer code
@@ -196,19 +190,19 @@ impl ProgramParser for BubblegumParser {
                     }
                     InstructionName::VerifyCreator => {
                         b_inst.payload =
-                            Some(build_creator_verification_payload(keys, ix_data, true)?);
+                            Some(build_creator_verification_payload(keys, true)?);
                     }
                     InstructionName::UnverifyCreator => {
                         b_inst.payload =
-                            Some(build_creator_verification_payload(keys, ix_data, false)?);
+                            Some(build_creator_verification_payload(keys, false)?);
                     }
                     InstructionName::VerifyCollection | InstructionName::SetAndVerifyCollection => {
                         b_inst.payload =
-                            Some(build_collection_verification_payload(keys, ix_data)?);
+                            Some(build_collection_verification_payload(keys, true)?);
                     }
                     InstructionName::UnverifyCollection => {
                         b_inst.payload =
-                            Some(build_collection_unverification_payload(keys, ix_data)?);
+                            Some(build_collection_verification_payload(keys, false)?);
                     }
                     InstructionName::Unknown => {}
                     _ => {}
@@ -224,109 +218,32 @@ impl ProgramParser for BubblegumParser {
 // https://github.com/metaplex-foundation/mpl-bubblegum/blob/main/programs/bubblegum/README.md#-verify_creator-and-unverify_creator
 fn build_creator_verification_payload(
     keys: &[plerkle_serialization::Pubkey],
-    ix_data: &[u8],
     verify: bool,
 ) -> Result<Payload, BlockbusterError> {
     let creator = keys
         .get(5)
         .ok_or(BlockbusterError::InstructionParsingError)?
         .0;
-    let creator_hash = keys
-        .get(2)
-        .ok_or(BlockbusterError::InstructionParsingError)?
-        .0;
-    let data_hash = keys
-        .get(1)
-        .ok_or(BlockbusterError::InstructionParsingError)?
-        .0;
-
-    let metadata_offset = 108;
-    if ix_data.len() < metadata_offset {
-        return Err(BlockbusterError::InstructionParsingError);
-    }
-    let args_raw = ix_data[metadata_offset..].to_vec();
-    let args = MetadataArgs::try_from_slice(&args_raw)?;
     Ok(Payload::CreatorVerification {
         creator: Pubkey::new_from_array(creator),
-        verify,
-        creator_hash,
-        data_hash,
-        args,
-    })
-}
-
-// See Bubblegum for offsets and positions:
-// https://github.com/metaplex-foundation/mpl-bubblegum/blob/main/programs/bubblegum/README.md#-verify_collection-unverify_collection-and-set_and_verify_collection
-// Note: Collection from the args is used to update the collection in Bubblegum, so use it as the source of truth (instead of collection via accounts).
-fn build_collection_verification_payload(
-    keys: &[plerkle_serialization::Pubkey],
-    ix_data: &[u8],
-) -> Result<Payload, BlockbusterError> {
-    let metadata_offset = 108;
-    let collection_byte_size = 32;
-    let metadata_byte_end = ix_data.len() - collection_byte_size;
-
-    // Ensure data is valid.
-    if ix_data.len() < metadata_offset + collection_byte_size {
-        return Err(BlockbusterError::InstructionParsingError);
-    }
-
-    let args_raw = ix_data[metadata_offset..metadata_byte_end].to_vec();
-    let args = MetadataArgs::try_from_slice(&args_raw)?;
-    let collection_raw = ix_data[metadata_byte_end..].to_vec();
-    let collection: Pubkey = Pubkey::try_from_slice(&collection_raw)?;
-    let creator_hash = keys
-        .get(2)
-        .ok_or(BlockbusterError::InstructionParsingError)?
-        .0;
-    let data_hash = keys
-        .get(1)
-        .ok_or(BlockbusterError::InstructionParsingError)?
-        .0;
-
-    Ok(Payload::CollectionVerification {
-        collection,
-        args,
-        verify: true,
-        creator_hash,
-        data_hash,
+        verify
     })
 }
 
 // See Bubblegum for offsets and positions:
 // https://github.com/metaplex-foundation/mpl-bubblegum/blob/main/programs/bubblegum/README.md#-verify_collection-unverify_collection-and-set_and_verify_collection
 // NOTE: Unverfication does not include collection. This needs to be fixed in the README.
-fn build_collection_unverification_payload(
+fn build_collection_verification_payload(
     keys: &[plerkle_serialization::Pubkey],
-    ix_data: &[u8],
+    verify: bool,
 ) -> Result<Payload, BlockbusterError> {
-    let collection_index = 8;
-    let metadata_offset = 108;
-    if ix_data.len() < metadata_offset {
-        return Err(BlockbusterError::InstructionParsingError);
-    }
-
-    let args_raw = ix_data[metadata_offset..].to_vec();
-    let args = MetadataArgs::try_from_slice(&args_raw)?;
-    let creator_hash = keys
-        .get(2)
-        .ok_or(BlockbusterError::InstructionParsingError)?
-        .0;
-    let data_hash = keys
-        .get(1)
-        .ok_or(BlockbusterError::InstructionParsingError)?
-        .0;
     let collection_raw = keys
-        .get(collection_index)
+        .get(8)
         .ok_or(BlockbusterError::InstructionParsingError)?
         .0;
     let collection: Pubkey = Pubkey::try_from_slice(&collection_raw)?;
-
     Ok(Payload::CollectionVerification {
         collection,
-        args,
-        verify: false,
-        creator_hash,
-        data_hash,
+        verify
     })
 }
